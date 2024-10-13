@@ -1,8 +1,24 @@
 import { $ } from "bun";
+import * as readline from "readline";
+import * as fs from "fs/promises";
 
 type Point = { x: number; y: number };
+type Config = {
+  rectangle: { topLeft: Point; bottomRight: Point };
+  colorStates: string[][][];
+  similarityThreshold: number;
+  interval: number;
+};
 
-// Function to get the current mouse position using PowerShell
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+function askQuestion(query: string): Promise<string> {
+  return new Promise((resolve) => rl.question(query, resolve));
+}
+
 async function getMousePosition(): Promise<Point> {
   const script = `
     Add-Type @"
@@ -27,7 +43,6 @@ async function getMousePosition(): Promise<Point> {
   return { x, y };
 }
 
-// Function to get all pixel colors in a rectangle area using PowerShell
 async function getRectanglePixels(topLeft: Point, bottomRight: Point): Promise<string[][]> {
   const script = `
     Add-Type -AssemblyName System.Drawing
@@ -64,11 +79,41 @@ async function getRectanglePixels(topLeft: Point, bottomRight: Point): Promise<s
   const cleanedResult = result.slice(jsonStartIndex).trim();
   const parsedResult = JSON.parse(cleanedResult);
 
-  // Ensure the result is a two-dimensional array of strings
   return parsedResult.map((row: { value: string[] }) => row.value);
 }
 
-// Function to click at given coordinates using PowerShell
+function calculateSimilarity(rect1: string[][], rect2: string[][]): number {
+  const width = rect1.length;
+  const height = rect1[0].length;
+  let totalDifference = 0;
+  let totalPixels = 0;
+
+  for (let i = 0; i < width; i++) {
+    for (let j = 0; j < height; j++) {
+      const color1 = rect1[i][j];
+      const color2 = rect2[i][j];
+
+      const diff = calculateColorDifference(color1, color2);
+      totalDifference += diff;
+      totalPixels++;
+    }
+  }
+
+  const maxDifference = totalPixels * 255 * 3;
+  return 1 - (totalDifference / maxDifference);
+}
+
+function calculateColorDifference(color1: string, color2: string): number {
+  const r1 = parseInt(color1.slice(0, 2), 16);
+  const g1 = parseInt(color1.slice(2, 4), 16);
+  const b1 = parseInt(color1.slice(4, 6), 16);
+  const r2 = parseInt(color2.slice(0, 2), 16);
+  const g2 = parseInt(color2.slice(2, 4), 16);
+  const b2 = parseInt(color2.slice(4, 6), 16);
+
+  return Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2);
+}
+
 async function clickAt(x: number, y: number) {
   const script = `
     Add-Type @"
@@ -92,7 +137,6 @@ async function clickAt(x: number, y: number) {
   await $`powershell -Command "${script}"`;
 }
 
-// Function to move the cursor to given coordinates without clicking
 async function moveCursorTo(x: number, y: number) {
   const script = `
     Add-Type @"
@@ -108,105 +152,123 @@ async function moveCursorTo(x: number, y: number) {
   await $`powershell -Command "${script}"`;
 }
 
-// Function to calculate similarity between two rectangles
-function calculateSimilarity(rect1: string[][], rect2: string[][]): number {
-  const width = rect1.length;
-  const height = rect1[0].length;
-  let totalDifference = 0;
-  let totalPixels = 0;
-
-  for (let i = 0; i < width; i++) {
-    for (let j = 0; j < height; j++) {
-      const color1 = rect1[i][j];
-      const color2 = rect2[i][j];
-
-      const diff = calculateColorDifference(color1, color2);
-      totalDifference += diff;
-      totalPixels++;
-    }
+async function loadConfig(filePath: string): Promise<Config | null> {
+  try {
+    const data = await fs.readFile(filePath, "utf-8");
+    return JSON.parse(data);
+  } catch (error) {
+    console.error("Failed to load config:", error);
+    return null;
   }
-
-  const maxDifference = totalPixels * 255 * 3; // Max possible difference (255 per channel)
-  return 1 - (totalDifference / maxDifference); // Return similarity as a percentage
 }
 
-// Convert hex color to RGB and calculate difference
-function calculateColorDifference(color1: string, color2: string): number {
-  const r1 = parseInt(color1.slice(0, 2), 16);
-  const g1 = parseInt(color1.slice(2, 4), 16);
-  const b1 = parseInt(color1.slice(4, 6), 16);
-  const r2 = parseInt(color2.slice(0, 2), 16);
-  const g2 = parseInt(color2.slice(2, 4), 16);
-  const b2 = parseInt(color2.slice(4, 6), 16);
-
-  return Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2);
+async function saveConfig(filePath: string, config: Config) {
+  try {
+    await fs.writeFile(filePath, JSON.stringify(config, null, 2), "utf-8");
+  } catch (error) {
+    console.error("Failed to save config:", error);
+  }
 }
 
 (async () => {
   console.log("🚀 Starting the advanced area monitoring script...");
 
-  console.log("🖱️ Please place the cursor over the first corner of the target area...");
-  await new Promise(res => setTimeout(res, 5000)); // Wait for 5 seconds
+  const useExistingConfig = await askQuestion("Do you want to use an existing config? (Y/N): ");
+  let config: Config;
 
-  const firstCorner = await getMousePosition();
-  console.log(`📌 First corner captured at X: ${firstCorner.x}, Y: ${firstCorner.y}`);
+  if (useExistingConfig.toLowerCase() === "y") {
+    const configPath = await askQuestion("Enter the config file path: ");
+    const loadedConfig = await loadConfig(configPath);
+    if (loadedConfig) {
+      config = loadedConfig;
+      console.log("✅ Config loaded successfully.");
+    } else {
+      console.log("❌ Failed to load config. Exiting...");
+      rl.close();
+      return;
+    }
+  } else {
+    console.log("🖱️ Please place the cursor over the first corner of the target area and press Enter...");
+    await askQuestion("");
 
-  console.log("🖱️ Now place the cursor over the opposite corner of the target area...");
-  await new Promise(res => setTimeout(res, 5000)); // Wait for 5 seconds
+    const firstCorner = await getMousePosition();
+    console.log(`📌 First corner captured at X: ${firstCorner.x}, Y: ${firstCorner.y}`);
 
-  const secondCorner = await getMousePosition();
-  console.log(`📌 Second corner captured at X: ${secondCorner.x}, Y: ${secondCorner.y}`);
+    console.log("🖱️ Now place the cursor over the opposite corner of the target area and press Enter...");
+    await askQuestion("");
 
-  console.log("🖱️ Move the cursor away from the target area...");
-  await new Promise(res => setTimeout(res, 5000)); // Additional wait time to move cursor
+    const secondCorner = await getMousePosition();
+    console.log(`📌 Second corner captured at X: ${secondCorner.x}, Y: ${secondCorner.y}`);
 
-  // Determine top-left and bottom-right points
-  const topLeft: Point = {
-    x: Math.min(firstCorner.x, secondCorner.x),
-    y: Math.min(firstCorner.y, secondCorner.y),
-  };
-  const bottomRight: Point = {
-    x: Math.max(firstCorner.x, secondCorner.x),
-    y: Math.max(firstCorner.y, secondCorner.y),
-  };
+    const topLeft: Point = {
+      x: Math.min(firstCorner.x, secondCorner.x),
+      y: Math.min(firstCorner.y, secondCorner.y),
+    };
+    const bottomRight: Point = {
+      x: Math.max(firstCorner.x, secondCorner.x),
+      y: Math.max(firstCorner.y, secondCorner.y),
+    };
 
-  console.log(`📏 Monitoring rectangle defined from (${topLeft.x}, ${topLeft.y}) to (${bottomRight.x}, ${bottomRight.y})`);
+    console.log(`📏 Monitoring rectangle defined from (${topLeft.x}, ${topLeft.y}) to (${bottomRight.x}, ${bottomRight.y})`);
 
-  const pixelCaptureStartTime = performance.now();
-  const initialPixels = await getRectanglePixels(topLeft, bottomRight);
-  const pixelCaptureEndTime = performance.now();
-  console.log(`🎨 Initial pixel colors captured in ${(pixelCaptureEndTime - pixelCaptureStartTime).toFixed(2)} ms`);
+    const colorStates: string[][][] = [];
+
+    while (true) {
+      console.log("🖱️ Adjust the screen for a new possible color state and press Enter...");
+      await askQuestion("");
+
+      const pixels = await getRectanglePixels(topLeft, bottomRight);
+      colorStates.push(pixels);
+
+      const moreColors = await askQuestion("Do you want to add another possible color state? (Y/N): ");
+      if (moreColors.toLowerCase() !== "y") {
+        break;
+      }
+    }
+
+    const similarityThreshold = parseFloat(await askQuestion("Enter similarity threshold (0-1): "));
+    const interval = parseInt(await askQuestion("Enter interval period in milliseconds: "), 10);
+
+    config = {
+      rectangle: { topLeft, bottomRight },
+      colorStates,
+      similarityThreshold,
+      interval,
+    };
+
+    const saveConfigChoice = await askQuestion("Do you want to save this configuration? (Y/N): ");
+    if (saveConfigChoice.toLowerCase() === "y") {
+      const configPath = await askQuestion("Enter the config file name: ");
+      await saveConfig(configPath, config);
+      console.log("✅ Config saved successfully.");
+    }
+  }
 
   setInterval(async () => {
-    const pixelCaptureStart = performance.now();
-    const currentPixels = await getRectanglePixels(topLeft, bottomRight);
-    const pixelCaptureEnd = performance.now();
-    console.log(`⏱️ Time to capture current pixels: ${(pixelCaptureEnd - pixelCaptureStart).toFixed(2)} ms`);
+    const currentPixels = await getRectanglePixels(config.rectangle.topLeft, config.rectangle.bottomRight);
 
-    const similarityCalcStart = performance.now();
-    const similarity = calculateSimilarity(initialPixels, currentPixels);
-    const similarityCalcEnd = performance.now();
-    console.log(`⏱️ Time to calculate similarity: ${(similarityCalcEnd - similarityCalcStart).toFixed(2)} ms`);
+    for (const state of config.colorStates) {
+      const similarity = calculateSimilarity(state, currentPixels);
+      console.log(`🔍 Current similarity: ${(similarity * 100).toFixed(2)}%`);
 
-    console.log(`🔍 Current similarity: ${(similarity * 100).toFixed(2)}%`);
+      if (similarity >= config.similarityThreshold) {
+        console.log("✅ Similarity threshold met! Performing action...");
 
-    if (similarity > 0.9) { // For example, trigger if similarity is above 90%
-      console.log("✅ Similarity threshold met! Performing action...");
+        const midPoint: Point = {
+          x: Math.floor((config.rectangle.topLeft.x + config.rectangle.bottomRight.x) / 2),
+          y: Math.floor((config.rectangle.topLeft.y + config.rectangle.bottomRight.y) / 2),
+        };
 
-      const midPoint: Point = {
-        x: Math.floor((topLeft.x + bottomRight.x) / 2),
-        y: Math.floor((topLeft.y + bottomRight.y) / 2),
-      };
+        const originalPosition = await getMousePosition();
+        await clickAt(midPoint.x, midPoint.y);
+        console.log(`🖱️ Clicked at (${midPoint.x}, ${midPoint.y})`);
 
-      const originalPosition = await getMousePosition();
-      await clickAt(midPoint.x, midPoint.y);
-      console.log(`🖱️ Clicked at (${midPoint.x}, ${midPoint.y})`);
-
-      // Return cursor to original position without clicking
-      await moveCursorTo(originalPosition.x, originalPosition.y);
-      console.log(`🔄 Returned cursor to original position (${originalPosition.x}, ${originalPosition.y})`);
-    } else {
-      console.log("❌ Similarity below threshold. No action taken.");
+        await moveCursorTo(originalPosition.x, originalPosition.y);
+        console.log(`🔄 Returned cursor to original position (${originalPosition.x}, ${originalPosition.y})`);
+        break;
+      }
     }
-  }, 20000); // 20 seconds
+  }, config.interval);
+
+  rl.close();
 })();
