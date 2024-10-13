@@ -1,13 +1,13 @@
 import { $ } from "bun";
-import * as readline from "readline";
-import * as fs from "fs/promises";
+import readline from "readline";
+import { writeFile, readFile } from "fs/promises";
 
 type Point = { x: number; y: number };
 type Config = {
-  rectangle: { topLeft: Point; bottomRight: Point };
+  initialRect: { topLeft: Point; bottomRight: Point };
   colorStates: string[][][];
   similarityThreshold: number;
-  interval: number;
+  intervalPeriod: number;
 };
 
 const rl = readline.createInterface({
@@ -78,7 +78,6 @@ async function getRectanglePixels(topLeft: Point, bottomRight: Point): Promise<s
   const jsonStartIndex = result.indexOf('[');
   const cleanedResult = result.slice(jsonStartIndex).trim();
   const parsedResult = JSON.parse(cleanedResult);
-
   return parsedResult.map((row: { value: string[] }) => row.value);
 }
 
@@ -152,100 +151,102 @@ async function moveCursorTo(x: number, y: number) {
   await $`powershell -Command "${script}"`;
 }
 
-async function loadConfig(filePath: string): Promise<Config | null> {
-  try {
-    const data = await fs.readFile(filePath, "utf-8");
-    return JSON.parse(data);
-  } catch (error) {
-    console.error("Failed to load config:", error);
-    return null;
-  }
+async function captureInitialArea(): Promise<{ topLeft: Point; bottomRight: Point }> {
+  console.log("🖱️ Please place the cursor over the first corner of the target area and press Enter...");
+  await askQuestion("");
+  const firstCorner = await getMousePosition();
+  console.log(`📌 First corner captured at X: ${firstCorner.x}, Y: ${firstCorner.y}`);
+
+  console.log("🖱️ Now place the cursor over the opposite corner of the target area and press Enter...");
+  await askQuestion("");
+  const secondCorner = await getMousePosition();
+  console.log(`📌 Second corner captured at X: ${secondCorner.x}, Y: ${secondCorner.y}`);
+
+  return {
+    topLeft: {
+      x: Math.min(firstCorner.x, secondCorner.x),
+      y: Math.min(firstCorner.y, secondCorner.y),
+    },
+    bottomRight: {
+      x: Math.max(firstCorner.x, secondCorner.x),
+      y: Math.max(firstCorner.y, secondCorner.y),
+    },
+  };
 }
 
-async function saveConfig(filePath: string, config: Config) {
-  try {
-    await fs.writeFile(filePath, JSON.stringify(config, null, 2), "utf-8");
-  } catch (error) {
-    console.error("Failed to save config:", error);
+async function captureColorStates(
+  topLeft: Point,
+  bottomRight: Point
+): Promise<string[][][]> {
+  const colorStates: string[][][] = [];
+  let addMore = true;
+
+  while (addMore) {
+    console.log("🖼️ Capturing color state...");
+    const pixels = await getRectanglePixels(topLeft, bottomRight);
+    colorStates.push(pixels);
+
+    const answer = await askQuestion("Do you want to add another color state? (Y/N): ");
+    addMore = answer.trim().toUpperCase() === "Y";
+    if (addMore) {
+      console.log("🖱️ Adjust the screen for the new state and press Enter...");
+      await askQuestion("");
+    }
   }
+
+  return colorStates;
+}
+
+async function saveConfig(config: Config, filename: string) {
+  const configData = JSON.stringify(config, null, 2);
+  await writeFile(filename, configData, "utf-8");
+  console.log(`💾 Configuration saved to ${filename}`);
+}
+
+async function loadConfig(filename: string): Promise<Config> {
+  const configData = await readFile(filename, "utf-8");
+  return JSON.parse(configData);
 }
 
 (async () => {
-  console.log("🚀 Starting the advanced area monitoring script...");
+  console.log("🚀 Starting the rectangle monitoring script...");
 
-  const useExistingConfig = await askQuestion("Do you want to use an existing config? (Y/N): ");
+  const useExistingConfig = (await askQuestion("Do you want to use an existing configuration? (Y/N): "))
+    .trim()
+    .toUpperCase() === "Y";
+
   let config: Config;
 
-  if (useExistingConfig.toLowerCase() === "y") {
-    const configPath = await askQuestion("Enter the config file path: ");
-    const loadedConfig = await loadConfig(configPath);
-    if (loadedConfig) {
-      config = loadedConfig;
-      console.log("✅ Config loaded successfully.");
-    } else {
-      console.log("❌ Failed to load config. Exiting...");
-      rl.close();
-      return;
-    }
+  if (useExistingConfig) {
+    const configPath = await askQuestion("Enter the path to the configuration file: ");
+    config = await loadConfig(configPath.trim());
+    console.log("🔧 Configuration loaded.");
   } else {
-    console.log("🖱️ Please place the cursor over the first corner of the target area and press Enter...");
-    await askQuestion("");
-
-    const firstCorner = await getMousePosition();
-    console.log(`📌 First corner captured at X: ${firstCorner.x}, Y: ${firstCorner.y}`);
-
-    console.log("🖱️ Now place the cursor over the opposite corner of the target area and press Enter...");
-    await askQuestion("");
-
-    const secondCorner = await getMousePosition();
-    console.log(`📌 Second corner captured at X: ${secondCorner.x}, Y: ${secondCorner.y}`);
-
-    const topLeft: Point = {
-      x: Math.min(firstCorner.x, secondCorner.x),
-      y: Math.min(firstCorner.y, secondCorner.y),
-    };
-    const bottomRight: Point = {
-      x: Math.max(firstCorner.x, secondCorner.x),
-      y: Math.max(firstCorner.y, secondCorner.y),
-    };
-
-    console.log(`📏 Monitoring rectangle defined from (${topLeft.x}, ${topLeft.y}) to (${bottomRight.x}, ${bottomRight.y})`);
-
-    const colorStates: string[][][] = [];
-
-    while (true) {
-      console.log("🖱️ Adjust the screen for a new possible color state and press Enter...");
-      await askQuestion("");
-
-      const pixels = await getRectanglePixels(topLeft, bottomRight);
-      colorStates.push(pixels);
-
-      const moreColors = await askQuestion("Do you want to add another possible color state? (Y/N): ");
-      if (moreColors.toLowerCase() !== "y") {
-        break;
-      }
-    }
-
-    const similarityThreshold = parseFloat(await askQuestion("Enter similarity threshold (0-1): "));
-    const interval = parseInt(await askQuestion("Enter interval period in milliseconds: "), 10);
+    const initialRect = await captureInitialArea();
+    const colorStates = await captureColorStates(initialRect.topLeft, initialRect.bottomRight);
+    const similarityThreshold = parseFloat(
+      await askQuestion("Enter the similarity threshold (0.0 to 1.0): ")
+    );
+    const intervalPeriod = parseInt(
+      await askQuestion("Enter the interval period in milliseconds: ")
+    );
 
     config = {
-      rectangle: { topLeft, bottomRight },
+      initialRect,
       colorStates,
       similarityThreshold,
-      interval,
+      intervalPeriod,
     };
 
-    const saveConfigChoice = await askQuestion("Do you want to save this configuration? (Y/N): ");
-    if (saveConfigChoice.toLowerCase() === "y") {
-      const configPath = await askQuestion("Enter the config file name: ");
-      await saveConfig(configPath, config);
-      console.log("✅ Config saved successfully.");
-    }
+    const configFileName = await askQuestion("Enter the name of the configuration file to save: ");
+    await saveConfig(config, configFileName.trim());
   }
 
+  const { topLeft, bottomRight } = config.initialRect;
+
   setInterval(async () => {
-    const currentPixels = await getRectanglePixels(config.rectangle.topLeft, config.rectangle.bottomRight);
+    const currentPixels = await getRectanglePixels(topLeft, bottomRight);
+    let matched = false;
 
     for (const state of config.colorStates) {
       const similarity = calculateSimilarity(state, currentPixels);
@@ -255,8 +256,8 @@ async function saveConfig(filePath: string, config: Config) {
         console.log("✅ Similarity threshold met! Performing action...");
 
         const midPoint: Point = {
-          x: Math.floor((config.rectangle.topLeft.x + config.rectangle.bottomRight.x) / 2),
-          y: Math.floor((config.rectangle.topLeft.y + config.rectangle.bottomRight.y) / 2),
+          x: Math.floor((topLeft.x + bottomRight.x) / 2),
+          y: Math.floor((topLeft.y + bottomRight.y) / 2),
         };
 
         const originalPosition = await getMousePosition();
@@ -265,10 +266,14 @@ async function saveConfig(filePath: string, config: Config) {
 
         await moveCursorTo(originalPosition.x, originalPosition.y);
         console.log(`🔄 Returned cursor to original position (${originalPosition.x}, ${originalPosition.y})`);
+
+        matched = true;
         break;
       }
     }
-  }, config.interval);
 
-  rl.close();
+    if (!matched) {
+      console.log("❌ No matching color state found.");
+    }
+  }, config.intervalPeriod);
 })();
