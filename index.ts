@@ -142,15 +142,15 @@ function calculateColorDifference(color1: string, color2: string): number {
   return Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2);
 }
 
-async function prompt(question: string): Promise<string> {
+async function prompt(question: string, defaultValue: string = ""): Promise<string> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
   return new Promise((resolve) => {
-    rl.question(question, (answer) => {
+    rl.question(`${question} (${defaultValue}): `, (answer) => {
       rl.close();
-      resolve(answer.trim());
+      resolve(answer.trim() || defaultValue);
     });
   });
 }
@@ -181,7 +181,7 @@ async function capturePossibleColorings(topLeft: Point, bottomRight: Point): Pro
     const pixels = await getRectanglePixels(topLeft, bottomRight);
     colorings.push(pixels);
 
-    const moreColors = await prompt("Would you like to capture another possible coloring (Y/n)? ");
+    const moreColors = await prompt("Would you like to capture another possible coloring", "n");
     if (moreColors.toLowerCase() === "n") break;
 
     console.log("🖱️ Adjust the screen as necessary and press ENTER to capture another coloring...");
@@ -203,24 +203,24 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
 (async () => {
   console.log("🚀 Starting the rectangle auto-clicker");
 
-  const useExistingConfig = (await prompt("Would you like to use an existing config file (Y/n)? ")).toLowerCase() === "y";
+  const useExistingConfig = (await prompt("Would you like to use an existing config file", "n")).toLowerCase() === "y";
   let config: Config;
   if (useExistingConfig) {
-    const configPath = await prompt("Please specify the path of the config file: ");
+    const configPath = await prompt("Please specify the path of the config file", "config.json");
     config = await loadConfig(configPath);
   } else {
     const { topLeft, bottomRight } = await configureRectangle();
     console.log(`📏 Monitoring rectangle defined from (${topLeft.x}, ${topLeft.y}) to (${bottomRight.x}, ${bottomRight.y})`);
 
     let possibleColorings = await capturePossibleColorings(topLeft, bottomRight);
-    const similarityThreshold = parseFloat(await prompt("Set similarity threshold (e.g., 0.9): "));
-    const intervalPeriod = parseInt(await prompt("Set interval period in milliseconds (e.g., 20000): "), 10);
+    const similarityThreshold = parseFloat(await prompt("Set similarity threshold", "0.9"));
+    const intervalPeriod = parseInt(await prompt("Set interval period in milliseconds", "20000"), 10);
 
     config = { topLeft, bottomRight, possibleColorings, similarityThreshold, intervalPeriod };
 
-    const saveConfigChoice = await prompt("Would you like to save this configuration (Y/n)? ");
+    const saveConfigChoice = await prompt("Would you like to save this configuration", "y");
     if (saveConfigChoice.toLowerCase() !== "n") {
-      const configFilePath = await prompt("Enter the desired config file name: ");
+      const configFilePath = await prompt("Enter the desired config file name", "config.json");
       await saveConfig(configFilePath, config);
     }
   }
