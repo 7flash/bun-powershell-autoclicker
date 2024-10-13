@@ -3,6 +3,13 @@ import readline from "readline";
 import { writeFile, readFile } from "fs/promises";
 
 type Point = { x: number; y: number };
+type Config = {
+  topLeft: Point;
+  bottomRight: Point;
+  possibleColorings: string[][][];
+  similarityThreshold: number;
+  intervalPeriod: number;
+};
 
 async function getMousePosition(): Promise<Point> {
   const script = `
@@ -184,12 +191,12 @@ async function capturePossibleColorings(topLeft: Point, bottomRight: Point): Pro
   return colorings;
 }
 
-async function loadConfig(configPath: string): Promise<any> {
+async function loadConfig(configPath: string): Promise<Config> {
   const configContent = await readFile(configPath, "utf-8");
-  return JSON.parse(configContent);
+  return JSON.parse(configContent) as Config;
 }
 
-async function saveConfig(configPath: string, config: any): Promise<void> {
+async function saveConfig(configPath: string, config: Config): Promise<void> {
   await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
 }
 
@@ -197,7 +204,7 @@ async function saveConfig(configPath: string, config: any): Promise<void> {
   console.log("🚀 Starting the rectangle auto-clicker");
 
   const useExistingConfig = (await prompt("Would you like to use an existing config file (Y/n)? ")).toLowerCase() === "y";
-  let config = {};
+  let config: Config;
   if (useExistingConfig) {
     const configPath = await prompt("Please specify the path of the config file: ");
     config = await loadConfig(configPath);
