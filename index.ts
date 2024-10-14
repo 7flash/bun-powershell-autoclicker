@@ -17,13 +17,13 @@ async function getMousePosition(): Promise<Point> {
       using System;
       using System.Runtime.InteropServices;
       public class GetCursorPosition {
+        [DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out POINT lpPoint);
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT {
           public int X;
           public int Y;
         }
-        [DllImport("user32.dll")]
-        public static extern bool GetCursorPos(out POINT lpPoint);
       }
 "@
     $point = New-Object GetCursorPosition+POINT
@@ -177,6 +177,9 @@ async function configureRectangle(): Promise<{ topLeft: Point; bottomRight: Poin
 async function capturePossibleColorings(topLeft: Point, bottomRight: Point): Promise<string[][][]> {
   const colorings: string[][][] = [];
 
+  console.log("🚨 Please move your cursor away from the selected rectangle and press ENTER to proceed with capturing.");
+  await prompt(""); // Wait for user to move cursor away
+
   while (true) {
     const pixels = await getRectanglePixels(topLeft, bottomRight);
     colorings.push(pixels);
@@ -204,10 +207,16 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
   console.log("🚀 Starting the rectangle auto-clicker");
 
   const useExistingConfig = (await prompt("Would you like to use an existing config file", "n")).toLowerCase() === "y";
-  let config: Config;
+  let configs: Config[] = [];
   if (useExistingConfig) {
-    const configPath = await prompt("Please specify the path of the config file", "config.json");
-    config = await loadConfig(configPath);
+    const configPaths = (await prompt("Please specify the paths of the config files, separated by commas", "config.json"))
+      .split(',')
+      .map(path => path.trim());
+
+    for (const configPath of configPaths) {
+      const config = await loadConfig(configPath);
+      configs.push(config);
+    }
   } else {
     const { topLeft, bottomRight } = await configureRectangle();
     console.log(`📏 Monitoring rectangle defined from (${topLeft.x}, ${topLeft.y}) to (${bottomRight.x}, ${bottomRight.y})`);
@@ -216,7 +225,9 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
     const similarityThreshold = parseFloat(await prompt("Set similarity threshold", "0.9"));
     const intervalPeriod = parseInt(await prompt("Set interval period in milliseconds", "20000"), 10);
 
-    config = { topLeft, bottomRight, possibleColorings, similarityThreshold, intervalPeriod };
+    const config = { topLeft, bottomRight, possibleColorings, similarityThreshold, intervalPeriod };
+
+    configs.push(config);
 
     const saveConfigChoice = await prompt("Would you like to save this configuration", "y");
     if (saveConfigChoice.toLowerCase() !== "n") {
@@ -225,14 +236,20 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
     }
   }
 
-  const { topLeft, bottomRight, possibleColorings, similarityThreshold, intervalPeriod } = config;
-  console.log(`🔍 Using similarity threshold: ${similarityThreshold} and interval period: ${intervalPeriod} ms`);
+  let currentIndex = 0;
 
-  setInterval(async () => {
+  console.log("🔁 Starting the workflow sequence...");
+  async function processConfig() {
+    const config = configs[currentIndex];
+    const { topLeft, bottomRight, possibleColorings, similarityThreshold, intervalPeriod } = config;
+    console.log(`📋 [Config ${currentIndex + 1}/${configs.length}]`);
+    console.log(`🔍 Using similarity threshold: ${similarityThreshold} and interval period: ${intervalPeriod} ms`);
+
     const currentPixels = await getRectanglePixels(topLeft, bottomRight);
-    for (const colors of possibleColorings) {
+    for (const [index, colors] of possibleColorings.entries()) {
+      console.log(`🖼️ Comparing coloring ${index + 1}/${possibleColorings.length}`);
       const similarity = calculateSimilarity(colors, currentPixels);
-      console.log(`🔍 Current similarity: ${(similarity * 100).toFixed(2)}%`);
+      console.log(`🔍 Current similarity for coloring ${index + 1}: ${(similarity * 100).toFixed(2)}%`);
 
       if (similarity >= similarityThreshold) {
         console.log("✅ Similarity threshold met! Performing action...");
@@ -240,13 +257,21 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
         const midpoint: Point = { x: Math.floor((topLeft.x + bottomRight.x) / 2), y: Math.floor((topLeft.y + bottomRight.y) / 2) };
 
         const originalPosition = await getMousePosition();
+        console.log(`🖱️ Performing click at (${midpoint.x}, ${midpoint.y})`);
         await clickAt(midpoint.x, midpoint.y);
-        console.log(`🖱️ Clicked at (${midpoint.x}, ${midpoint.y})`);
         
+        console.log(`🔄 Returning cursor to original position (${originalPosition.x}, ${originalPosition.y})`);
         await moveCursorTo(originalPosition.x, originalPosition.y);
-        console.log(`🔄 Returned cursor to original position (${originalPosition.x}, ${originalPosition.y})`);
+
+        // Rotate to the next config
+        currentIndex = (currentIndex + 1) % configs.length;
         break; // Action performed, break the loop
       }
     }
-  }, intervalPeriod);
+
+    console.log("⏳ Waiting for next interval...");
+    setTimeout(processConfig, config.intervalPeriod);
+  }
+
+  processConfig();
 })();

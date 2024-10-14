@@ -1,20 +1,21 @@
 # bun-powershell-autoclicker
 
-Welcome to the **bun-powershell-autoclicker**! This tool helps automate mouse actions based on screen changes with PowerShell and Bun. Let's explore the latest updates and how to use them.
+Welcome to **bun-powershell-autoclicker**! This tool automates mouse actions based on screen changes using PowerShell and Bun. Let's dive into the latest updates and explore how to use this tool effectively.
 
 ## New Features 🚀
 
-1. **Configuration Management** 📁
-   - Save and load configurations for monitoring different screen areas.
-   - Prompt users to use existing configurations or set up new ones.
+1. **Multiple Configurations Support** 📂
+   - Load multiple configuration files at once, allowing for a more flexible monitoring setup.
+   - Seamlessly rotate through configurations during monitoring sessions.
 
-2. **Enhanced User Interaction** 💬
-   - Interactive prompts guide users through setting up monitoring areas and capturing possible screen colorings.
-   - Users can specify similarity thresholds and interval periods for monitoring.
+2. **Enhanced Capture Guidance** 🚨
+   - New prompts instruct users to move the cursor away from the selected area before capturing colorings, ensuring accuracy.
 
-3. **Multiple Coloring Captures** 🎨
-   - Capture multiple possible colorings for a monitoring area to increase detection accuracy.
-   - Prompt users to capture additional colorings if needed.
+3. **Detailed Comparison Feedback** 🖼️
+   - Receive feedback on each coloring comparison, including the similarity percentage for each captured coloring.
+
+4. **Workflow Sequence** 🔁
+   - Automatically switch between configurations, allowing for continuous monitoring and action across multiple setups.
 
 ## Features ✨
 
@@ -43,6 +44,7 @@ Welcome to the **bun-powershell-autoclicker**! This tool helps automate mouse ac
    - Position the cursor over the first and second corners of the target area and press ENTER to capture.
 
 3. **Capture Possible Colorings:**
+   - Move your cursor away from the selected rectangle and press ENTER before capturing.
    - Capture multiple possible colorings for the defined area by following the prompts.
    - Specify similarity thresholds and monitoring intervals as needed.
 
@@ -50,6 +52,7 @@ Welcome to the **bun-powershell-autoclicker**! This tool helps automate mouse ac
    - The script will continuously monitor the defined area at specified intervals.
    - If the similarity between any captured and current pixel data exceeds the threshold, it will perform a click action at the center of the area.
    - The cursor will be returned to its original position after the action.
+   - Automatically rotate through multiple configurations, ensuring comprehensive monitoring.
 
 ### Example Usage
 
