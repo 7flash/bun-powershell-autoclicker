@@ -203,12 +203,16 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
 (async () => {
   console.log("🚀 Starting the rectangle auto-clicker");
 
-  const useExistingConfig = (await prompt("Would you like to use existing config files (comma-separated)", "n")).toLowerCase() === "y";
+  const useExistingConfig = (await prompt("Would you like to use an existing config file", "n")).toLowerCase() === "y";
   let configs: Config[] = [];
   if (useExistingConfig) {
-    const configPaths = (await prompt("Please specify the paths of the config files", "config.json")).split(',');
+    const configPaths = (await prompt("Please specify the paths of the config files, separated by commas", "config.json"))
+      .split(',')
+      .map(path => path.trim());
+
     for (const configPath of configPaths) {
-      configs.push(await loadConfig(configPath.trim()));
+      const config = await loadConfig(configPath);
+      configs.push(config);
     }
   } else {
     const { topLeft, bottomRight } = await configureRectangle();
@@ -219,6 +223,7 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
     const intervalPeriod = parseInt(await prompt("Set interval period in milliseconds", "20000"), 10);
 
     const config = { topLeft, bottomRight, possibleColorings, similarityThreshold, intervalPeriod };
+
     configs.push(config);
 
     const saveConfigChoice = await prompt("Would you like to save this configuration", "y");
@@ -228,10 +233,11 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
     }
   }
 
-  let currentConfigIndex = 0;
+  let currentIndex = 0;
 
-  setInterval(async () => {
-    const config = configs[currentConfigIndex];
+  console.log("🔁 Starting the workflow sequence...");
+  async function processConfig() {
+    const config = configs[currentIndex];
     const { topLeft, bottomRight, possibleColorings, similarityThreshold, intervalPeriod } = config;
     console.log(`🔍 Using similarity threshold: ${similarityThreshold} and interval period: ${intervalPeriod} ms`);
 
@@ -252,9 +258,14 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
         await moveCursorTo(originalPosition.x, originalPosition.y);
         console.log(`🔄 Returned cursor to original position (${originalPosition.x}, ${originalPosition.y})`);
 
-        currentConfigIndex = (currentConfigIndex + 1) % configs.length; // Rotate to the next config
+        // Rotate to the next config
+        currentIndex = (currentIndex + 1) % configs.length;
         break; // Action performed, break the loop
       }
     }
-  }, configs[currentConfigIndex].intervalPeriod);
+
+    setTimeout(processConfig, config.intervalPeriod);
+  }
+
+  processConfig();
 })();
