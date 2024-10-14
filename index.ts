@@ -17,13 +17,13 @@ async function getMousePosition(): Promise<Point> {
       using System;
       using System.Runtime.InteropServices;
       public class GetCursorPosition {
+        [DllImport("user32.dll")]
+        public static extern bool GetCursorPos(out POINT lpPoint);
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT {
           public int X;
           public int Y;
         }
-        [DllImport("user32.dll")]
-        public static extern bool GetCursorPos(out POINT lpPoint);
       }
 "@
     $point = New-Object GetCursorPosition+POINT
@@ -239,12 +239,14 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
   async function processConfig() {
     const config = configs[currentIndex];
     const { topLeft, bottomRight, possibleColorings, similarityThreshold, intervalPeriod } = config;
+    console.log(`📋 [Config ${currentIndex + 1}/${configs.length}]`);
     console.log(`🔍 Using similarity threshold: ${similarityThreshold} and interval period: ${intervalPeriod} ms`);
 
     const currentPixels = await getRectanglePixels(topLeft, bottomRight);
-    for (const colors of possibleColorings) {
+    for (const [index, colors] of possibleColorings.entries()) {
+      console.log(`🖼️ Comparing coloring ${index + 1}/${possibleColorings.length}`);
       const similarity = calculateSimilarity(colors, currentPixels);
-      console.log(`🔍 Current similarity: ${(similarity * 100).toFixed(2)}%`);
+      console.log(`🔍 Current similarity for coloring ${index + 1}: ${(similarity * 100).toFixed(2)}%`);
 
       if (similarity >= similarityThreshold) {
         console.log("✅ Similarity threshold met! Performing action...");
@@ -252,11 +254,11 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
         const midpoint: Point = { x: Math.floor((topLeft.x + bottomRight.x) / 2), y: Math.floor((topLeft.y + bottomRight.y) / 2) };
 
         const originalPosition = await getMousePosition();
+        console.log(`🖱️ Performing click at (${midpoint.x}, ${midpoint.y})`);
         await clickAt(midpoint.x, midpoint.y);
-        console.log(`🖱️ Clicked at (${midpoint.x}, ${midpoint.y})`);
         
+        console.log(`🔄 Returning cursor to original position (${originalPosition.x}, ${originalPosition.y})`);
         await moveCursorTo(originalPosition.x, originalPosition.y);
-        console.log(`🔄 Returned cursor to original position (${originalPosition.x}, ${originalPosition.y})`);
 
         // Rotate to the next config
         currentIndex = (currentIndex + 1) % configs.length;
@@ -264,6 +266,7 @@ async function saveConfig(configPath: string, config: Config): Promise<void> {
       }
     }
 
+    console.log("⏳ Waiting for next interval...");
     setTimeout(processConfig, config.intervalPeriod);
   }
 
