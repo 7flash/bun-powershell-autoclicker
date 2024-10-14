@@ -177,6 +177,9 @@ async function configureRectangle(): Promise<{ topLeft: Point; bottomRight: Poin
 async function capturePossibleColorings(topLeft: Point, bottomRight: Point): Promise<string[][][]> {
   const colorings: string[][][] = [];
 
+  console.log("🚨 Please move your cursor away from the selected rectangle and press ENTER to proceed with capturing.");
+  await prompt(""); // Wait for user to move cursor away
+
   while (true) {
     const pixels = await getRectanglePixels(topLeft, bottomRight);
     colorings.push(pixels);
